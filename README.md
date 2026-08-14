@@ -3,6 +3,10 @@
 Personal toolbox of small, reusable scripts for debugging Models-as-a-Service
 (RHOAI / ODH) on OpenShift. Captured from day-to-day cluster triage.
 
+**Cursor skill:** `maas-debugging` (`.cursor/skills/maas-debugging/`) — also
+symlinked under `~/.cursor/skills/maas-debugging` so it works from other
+workspaces. Invoke by name or when debugging MaaS/gateway/auth/API keys.
+
 ## Quick start
 
 ```bash
@@ -78,6 +82,18 @@ Header works + body-only 404 ⇒ missing/broken `ipp-pre`.
 Flow: OC token → `POST /maas-api/v1/api-keys` → `GET /maas-api/v1/models` →
 `POST …/v1/chat/completions`. Deletes the key on exit unless `--keep-key`.
 
+### Burst inference + running token tally
+
+Like the main repo rate-limit loop, but prints per-call `usage` and cumulative
+Σprompt / Σcompletion / Σtotal after every request:
+
+```bash
+./scripts/burst-inference.sh
+./scripts/burst-inference.sh llm-simulator --count 20
+./scripts/burst-inference.sh --count 50 --delay 0.2 --stop-on-429
+API_KEY=sk-... ./scripts/burst-inference.sh --count 15
+```
+
 ### Auth stack inventory
 
 When key mint fails (`AUTH_FAILURE`, missing `X-MaaS-Username`):
@@ -115,6 +131,7 @@ Override namespace with `DB_NS=…` if auto-detect misses.
 | “Is IPP even loaded?” | `inventory-envoyfilters.sh` → `print-envoy-filters.sh` |
 | EF not applying | `check-istiod-skips.sh` |
 | End-to-end smoke | `mint-and-chat.sh` |
+| Rate-limit / token burn | `burst-inference.sh` |
 
 ## Origins
 
