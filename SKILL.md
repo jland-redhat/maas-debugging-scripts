@@ -14,39 +14,75 @@ description: >-
 **Goal:** minimize token burn. Run the bundled scripts. Do **not** invent
 large curl/`oc` blocks when a script already covers the job.
 
-## Skill layout (scripts ship with the skill)
+## Layout
+
+This repository **is** the skill (one copy of everything):
 
 ```text
-<skill-root>/                 ← directory containing this SKILL.md
+<skill-root>/          ← folder containing this SKILL.md
   SKILL.md
   lib/common.sh
   scripts/*.sh
+  README.md
 ```
 
-Resolve `<skill-root>` as the folder that holds this `SKILL.md` (wherever
-Cursor installed the skill: project `.cursor/skills/…`, `~/.cursor/skills/…`,
-or a GitHub-synced copy).
+Resolve `<skill-root>` as the directory that holds this `SKILL.md`.
 
 ```bash
-SKILL_ROOT="<skill-root>"   # absolute path to this skill directory
-cd "$SKILL_ROOT"            # optional; or call scripts by absolute path
+SKILL_ROOT="<absolute path to skill root>"
 ```
 
 ## Hard rules for the agent
 
-1. **Map symptom → script** (table below). Execute that script with the Shell tool.
-2. **Never rewrite** mint/list-models/chat/envoy-dump/psql recipes as ad-hoc
-   curls when a script exists — that wastes tokens and drifts from known-good.
-3. Pass env overrides through (`KUBECONFIG`, `MAAS_GATEWAY_HOST`, `DB_NS`,
-   `API_KEY`, `GW_NAME`, …). Read `scripts/<name>.sh --help` / header comments
-   only if flags are unclear.
+1. **Map symptom → script** (table below). Execute it with the Shell tool.
+2. **Never rewrite** mint / models / chat / envoy-dump / psql recipes as
+   ad-hoc curls when a script exists.
+3. Pass env overrides (`KUBECONFIG`, `MAAS_GATEWAY_HOST`, `DB_NS`, `API_KEY`, …).
 4. “Generations” often means Kubernetes `metadata.generation` (RHOAIENG-81865),
    **not** LLM tokens → `print-resource-generations.sh`.
 5. Postgres has `key_hash` only — no plaintext API keys in the DB.
 6. After a fix, **re-run the same script** to confirm.
+7. **Report broken scripts** — if a bundled script fails, misbehaves, or its
+   output is wrong/useless for the stated job, **tell the user** (do not
+   silently work around it). Use the failure report format below so the repo
+   can be fixed quickly.
+8. **Grow the toolbox** — if you hit a recurring or non-trivial debug step
+   with **no** matching script, recommend adding one (and offer to write it
+   in this skill repo). Prefer a small reusable script over a one-off curl
+   wall that will be reinvented next session.
 
-Only hand-roll commands when **no** script fits; then keep them tiny and
-consider adding a script to this skill afterward.
+### Script failure report (notify the user)
+
+When a script does not work as expected, surface this to the user **before**
+or alongside any workaround:
+
+```markdown
+**Script failure:** `scripts/<name>.sh`
+- **Command:** `<exact invocation including env>`
+- **What failed:** <exit code / empty output / wrong result / hang / …>
+- **Expected:** <one line>
+- **Got:** <short snippet or error; truncate>
+- **Likely cause:** <guess if obvious: NS detect, CRD name, flag, cluster skew>
+- **Suggested fix in repo:** <e.g. handle missing subscription column; fix istiod deploy name>
+```
+
+Continue debugging if needed, but do **not** hide the breakage — the point of
+this skill is a maintained script set.
+
+### When to recommend a new script
+
+Recommend (and offer to implement under `scripts/`) when:
+
+- You ran the same multi-step `oc`/`curl`/`jq` sequence more than once, or
+- The step is fragile / easy to get wrong (auth headers, admin port-forward,
+  DB discovery, token tallies), or
+- A gap blocked triage and a named recipe would help next time.
+
+Skip recommending scripts for trivial one-liners or purely cluster-specific
+one-offs that will never generalize.
+
+New script checklist: env-overridable, sources `lib/common.sh` when useful,
+`--help` or header usage, add a row to the symptom table + `README.md`.
 
 ## Symptom → script
 
@@ -87,5 +123,7 @@ consider adding a script to this skill afterward.
 
 ## Adding scripts
 
-Put new recipes in `<skill-root>/scripts/`, shared helpers in `lib/common.sh`.
-Keep them env-overridable. Update the symptom table in this file.
+Add under `scripts/`, helpers in `lib/common.sh`, update the symptom table above
+and `README.md`. If the skill root is a git checkout the user owns, implement
+the script there when they agree; otherwise give the proposed path + behavior
+so they can land it in this repo.
