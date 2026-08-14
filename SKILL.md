@@ -3,10 +3,11 @@ name: maas-debugging
 description: >-
   Debug Models-as-a-Service (MaaS) on OpenShift / RHOAI / ODH using bundled
   shell scripts (Envoy chains, generations churn, AuthPolicy, API keys,
-  inference bursts with token tally, Postgres). Use when debugging MaaS,
-  IPP/Praxis, Kuadrant, Limitador, gateway OOM, API keys, rate limits, or
-  when the user asks for MaaS debug scripts. Prefer these scripts over
-  writing new curls to save tokens.
+  inference bursts with token tally, streaming SSE, large request/response,
+  Postgres). Use when debugging MaaS, IPP/Praxis, Kuadrant, Limitador,
+  gateway OOM, API keys, rate limits, streaming, large payloads, or when the
+  user asks for MaaS debug scripts. Prefer these scripts over writing new
+  curls to save tokens.
 ---
 
 # MaaS Debugging
@@ -42,11 +43,15 @@ SKILL_ROOT="<absolute path to skill root>"
    **not** LLM tokens → `print-resource-generations.sh`.
 5. Postgres has `key_hash` only — no plaintext API keys in the DB.
 6. After a fix, **re-run the same script** to confirm.
-7. **Report broken scripts** — if a bundled script fails, misbehaves, or its
+7. **Simulator + large I/O:** if `probe-large-io.sh` detects an llm-d /
+   sample simulator and responses stay small, **ask the user** whether to
+   update that model’s simulator (e.g. LLMIS `--mode echo`) before patching
+   the cluster. Do not silently reconfigure.
+8. **Report broken scripts** — if a bundled script fails, misbehaves, or its
    output is wrong/useless for the stated job, **tell the user** (do not
    silently work around it). Use the failure report format below so the repo
    can be fixed quickly.
-8. **Grow the toolbox** — if you hit a recurring or non-trivial debug step
+9. **Grow the toolbox** — if you hit a recurring or non-trivial debug step
    with **no** matching script, recommend adding one (and offer to write it
    in this skill repo). Prefer a small reusable script over a one-off curl
    wall that will be reinvented next session.
@@ -96,6 +101,8 @@ New script checklist: env-overridable, sources `lib/common.sh` when useful,
 | Auth / key mint fail | `"$SKILL_ROOT/scripts/check-auth-stack.sh" --logs` |
 | Smoke: mint + one chat | `"$SKILL_ROOT/scripts/mint-and-chat.sh" [MODEL]` |
 | Burst + running token tally | `"$SKILL_ROOT/scripts/burst-inference.sh" --count N` |
+| Streaming SSE broken / incomplete | `"$SKILL_ROOT/scripts/probe-streaming.sh" [MODEL]` |
+| Large req/resp (stream + nonstream) | `"$SKILL_ROOT/scripts/probe-large-io.sh" [MODEL]` |
 | List API key rows in DB | `"$SKILL_ROOT/scripts/db-list-api-keys.sh"` |
 | Interactive `psql` | `"$SKILL_ROOT/scripts/db-shell.sh"` |
 | DB secrets / sslmode | `"$SKILL_ROOT/scripts/db-show-config.sh"` |
@@ -118,6 +125,13 @@ New script checklist: env-overridable, sources `lib/common.sh` when useful,
 **Key mint / AUTH_FAILURE** → `check-auth-stack.sh --logs` → `mint-and-chat.sh` → `db-list-api-keys.sh --counts`
 
 **Rate limit / token burn** → `burst-inference.sh --count 20` (`--stop-on-429` optional)
+
+**Streaming / SSE** → `probe-streaming.sh`
+
+**Large body / wasm chunk loss** → `probe-large-io.sh --request-kb 64 --response-tokens 512`
+(If model is llm-d-inference-sim / sample simulator: **ask the user** before
+patching the LLMIS to `--mode echo` for guaranteed large mirrored responses.
+Default path already sends `ignore_eos=true`.)
 
 **Gateway OOM** → `print-resource-generations.sh` (`--watch 5` if live)
 

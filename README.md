@@ -36,6 +36,7 @@ npx skills add jland-redhat/maas-debugging-scripts
 
 Update later with `npx skills check` / `npx skills update` (see [skills.sh](https://skills.sh)).
 
+
 ### Option B — Cursor UI: Remote Rule (GitHub)
 
 Cursor fetches/syncs the repo for you (you don’t clone by hand):
@@ -124,6 +125,8 @@ Or from a clone checkout:
 | `check-auth-stack.sh` | AuthPolicy / Authorino / NP |
 | `mint-and-chat.sh` | Mint key → models → one chat/completions |
 | `burst-inference.sh` | Many calls + running token tally |
+| `probe-streaming.sh` | Validate SSE `stream=true` chat/completions |
+| `probe-large-io.sh` | Large prompt + large completion; nonstream and stream |
 | `db-list-api-keys.sh` | `api_keys` rows in Postgres (`key_hash` only) |
 | `db-shell.sh` | Interactive `psql` |
 | `db-show-config.sh` | DB secrets / redacted DSN / sslmode |
@@ -137,6 +140,8 @@ Or from a clone checkout:
 | Auth / key mint fail | `check-auth-stack.sh`, `mint-and-chat.sh` |
 | Keys in DB | `db-list-api-keys.sh` |
 | Rate-limit / token burn | `burst-inference.sh` |
+| Streaming SSE | `probe-streaming.sh` |
+| Large request/response (both modes) | `probe-large-io.sh` |
 | Smoke | `mint-and-chat.sh` |
 
 ---
