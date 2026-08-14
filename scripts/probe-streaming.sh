@@ -21,6 +21,7 @@ PROMPT="${PROMPT:-Count from 1 to 20 slowly.}"
 VERBOSE=0
 KEEP_KEY="${KEEP_KEY:-0}"
 MIN_CHUNKS="${MIN_CHUNKS:-2}"
+EXPECT_ECHO=0
 
 usage() {
   cat <<EOF
@@ -32,6 +33,7 @@ Options:
   --max-tokens N   Default ${MAX_TOKENS}
   --prompt TEXT    User message
   --min-chunks N   Minimum data: events expected (default ${MIN_CHUNKS})
+  --expect-echo    Require reassembled content == prompt (llm-d --mode echo)
   --keep-key       Keep minted API key
   --verbose        Print first/last SSE lines
   -h, --help
@@ -43,6 +45,7 @@ while [[ $# -gt 0 ]]; do
     --max-tokens) MAX_TOKENS="${2:?}"; shift 2 ;;
     --prompt) PROMPT="${2:?}"; shift 2 ;;
     --min-chunks) MIN_CHUNKS="${2:?}"; shift 2 ;;
+    --expect-echo) EXPECT_ECHO=1; shift ;;
     --keep-key) KEEP_KEY=1; shift ;;
     --verbose) VERBOSE=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -78,9 +81,10 @@ CT="$(grep -i '^content-type:' "$HDR" | tr -d '\r' | awk '{print tolower($0)}' |
 echo "HTTP ${HTTP_CODE}"
 echo "Content-Type: ${CT:-"(none)"}"
 
-python3 - "$BODY" "$MIN_CHUNKS" "$VERBOSE" <<'PY'
-import json, sys, re
+python3 - "$BODY" "$MIN_CHUNKS" "$VERBOSE" "$EXPECT_ECHO" "$PROMPT" <<'PY'
+import hashlib, json, sys
 path, min_chunks, verbose = sys.argv[1], int(sys.argv[2]), sys.argv[3] == "1"
+expect_echo, prompt = sys.argv[4] == "1", sys.argv[5]
 raw = open(path, "rb").read().decode("utf-8", "replace")
 lines = raw.splitlines()
 data_lines = [ln[5:].strip() for ln in lines if ln.startswith("data:")]
@@ -105,7 +109,6 @@ for d in chunks:
         delta = c.get("delta") or {}
         if "content" in delta and delta["content"]:
             content_parts.append(delta["content"])
-        # some backends put content in message for non-delta frames
         msg = c.get("message") or {}
         if msg.get("content"):
             content_parts.append(msg["content"])
@@ -135,10 +138,20 @@ if not done and not finish:
 if parse_err and len(chunks) == 0:
     ok = False
     reasons.append("no parseable SSE JSON")
+if expect_echo:
+    ph = hashlib.sha256(prompt.encode()).hexdigest()
+    th = hashlib.sha256(text.encode()).hexdigest()
+    print(f"echo_check prompt_sha256={ph[:16]}… content_sha256={th[:16]}… match={ph == th}")
+    if text != prompt:
+        ok = False
+        reasons.append(
+            f"echo mismatch: prompt_bytes={len(prompt)} content_bytes={len(text)} "
+            f"(need llm-d-inference-sim --mode echo)"
+        )
 if not ok:
     print("FAIL:", "; ".join(reasons), file=sys.stderr)
     sys.exit(1)
-print("OK: streaming SSE looks healthy")
+print("OK: streaming SSE looks healthy" + (" (echo integrity OK)" if expect_echo else ""))
 PY
 STREAM_RC=$?
 

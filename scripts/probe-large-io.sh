@@ -26,6 +26,7 @@ MODES="both"
 KEEP_KEY="${KEEP_KEY:-0}"
 TIMEOUT_SECS="${TIMEOUT_SECS:-300}"
 VERBOSE=0
+EXPECT_ECHO=0
 
 usage() {
   cat <<EOF
@@ -38,14 +39,15 @@ Options:
   --response-tokens N    max_tokens (+ ignore_eos for simulators) (default ${RESPONSE_TOKENS})
   --modes MODE           nonstream | stream | both (default both)
   --timeout SECS         curl max-time (default ${TIMEOUT_SECS})
+  --expect-echo          Require response content == prompt (llm-d --mode echo)
   --keep-key             Keep minted API key
   --verbose              Extra details
   -h, --help
 
 Simulator tip:
   Detected llm-d / sample simulator models print a notice. For guaranteed
-  large responses, prefer ignore_eos (sent automatically) or ask an operator
-  to set the simulator --mode echo and use a large --request-kb.
+  large responses with integrity checks, use an echo-mode LLMIS and --expect-echo
+  (full-check infra does this). Agents must ask before patching a live model.
 EOF
 }
 
@@ -55,6 +57,7 @@ while [[ $# -gt 0 ]]; do
     --response-tokens) RESPONSE_TOKENS="${2:?}"; shift 2 ;;
     --modes) MODES="${2:?}"; shift 2 ;;
     --timeout) TIMEOUT_SECS="${2:?}"; shift 2 ;;
+    --expect-echo) EXPECT_ECHO=1; shift ;;
     --keep-key) KEEP_KEY=1; shift ;;
     --verbose) VERBOSE=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -95,12 +98,19 @@ PROMPT_BYTES="${#PROMPT}"
 SIM=0
 if is_simulator_model "$MODEL_NAME"; then
   SIM=1
-  echo
-  warn "Detected likely llm-d-inference-sim / sample simulator model: ${MODEL_NAME}"
-  echo "  Large response strategy: send ignore_eos=true + max_tokens=${RESPONSE_TOKENS}."
-  echo "  If completion stays short, ask before patching the LLMIS (e.g. --mode echo)"
-  echo "  so a large prompt is mirrored as a large response."
-  echo
+  if [[ "$EXPECT_ECHO" -eq 0 ]]; then
+    echo
+    warn "Detected likely llm-d-inference-sim / sample simulator model: ${MODEL_NAME}"
+    echo "  Large response strategy: send ignore_eos=true + max_tokens=${RESPONSE_TOKENS}."
+    echo "  For byte integrity, use echo-mode LLMIS + --expect-echo (see full-check infra)."
+    echo
+  fi
+fi
+
+# When expecting echo, ignore_eos is irrelevant; still fine to omit for clarity
+IGNORE_EOS="$SIM"
+if [[ "$EXPECT_ECHO" -eq 1 ]]; then
+  IGNORE_EOS=0
 fi
 
 run_one() {
@@ -122,7 +132,7 @@ run_one() {
     --arg p "$PROMPT" \
     --argjson t "$RESPONSE_TOKENS" \
     --argjson stream "$stream_json" \
-    --argjson sim "$SIM" '
+    --argjson ignore_eos "$IGNORE_EOS" '
       {
         model: $m,
         messages: [{role:"user", content:$p}],
@@ -130,7 +140,7 @@ run_one() {
         stream: $stream
       }
       + (if $stream then {stream_options:{include_usage:true}} else {} end)
-      + (if $sim == 1 then {ignore_eos:true} else {} end)
+      + (if $ignore_eos == 1 then {ignore_eos:true} else {} end)
     ')"
 
   info "[${mode}] POST ${CHAT_URL} (prompt=${PROMPT_BYTES}B max_tokens=${RESPONSE_TOKENS})"
@@ -151,9 +161,10 @@ run_one() {
   fi
 
   if [[ "$mode" == "nonstream" ]]; then
-    python3 - "$out" "$RESPONSE_TOKENS" "$VERBOSE" <<'PY' || { rm -f "$out" "$hdr"; return 1; }
-import json, sys
-path, want, verbose = sys.argv[1], int(sys.argv[2]), sys.argv[3] == "1"
+    python3 - "$out" "$PROMPT_FILE" "$EXPECT_ECHO" "$VERBOSE" <<'PY' || { rm -f "$out" "$hdr"; return 1; }
+import hashlib, json, sys
+path, prompt_path, expect_echo, verbose = sys.argv[1], sys.argv[2], sys.argv[3] == "1", sys.argv[4] == "1"
+prompt = open(prompt_path).read()
 o = json.load(open(path))
 content = ""
 for c in o.get("choices") or []:
@@ -168,18 +179,23 @@ finish = ((o.get("choices") or [{}])[0].get("finish_reason"))
 print(f"  content_chars={len(content)} completion_tokens={compl} finish={finish}")
 if verbose:
     print(f"  usage={usage}")
-if len(content) < 8 and int(compl or 0) < 1:
+if expect_echo:
+    ph = hashlib.sha256(prompt.encode()).hexdigest()
+    th = hashlib.sha256(content.encode()).hexdigest()
+    print(f"  echo_sha prompt={ph[:16]}… content={th[:16]}… match={ph == th}")
+    if content != prompt:
+        print(f"  FAIL: echo mismatch prompt_bytes={len(prompt)} content_bytes={len(content)}", file=sys.stderr)
+        sys.exit(1)
+elif len(content) < 8 and int(compl or 0) < 1:
     print("  FAIL: empty completion", file=sys.stderr)
     sys.exit(1)
-if want >= 64 and len(content) < 32 and int(compl or 0) < 16:
-    print("  FAIL: response much smaller than requested (simulator may need --mode echo)", file=sys.stderr)
-    sys.exit(1)
-print("  OK nonstream large I/O")
+print("  OK nonstream large I/O" + (" (echo integrity OK)" if expect_echo else ""))
 PY
   else
-    python3 - "$out" "$RESPONSE_TOKENS" "$VERBOSE" <<'PY' || { rm -f "$out" "$hdr"; return 1; }
-import json, sys
-path, want, verbose = sys.argv[1], int(sys.argv[2]), sys.argv[3] == "1"
+    python3 - "$out" "$PROMPT_FILE" "$EXPECT_ECHO" "$VERBOSE" <<'PY' || { rm -f "$out" "$hdr"; return 1; }
+import hashlib, json, sys
+path, prompt_path, expect_echo, verbose = sys.argv[1], sys.argv[2], sys.argv[3] == "1", sys.argv[4] == "1"
+prompt = open(prompt_path).read()
 raw = open(path, "rb").read().decode("utf-8", "replace")
 data = [ln[5:].strip() for ln in raw.splitlines() if ln.startswith("data:")]
 chunks = [d for d in data if d and d != "[DONE]"]
@@ -209,10 +225,17 @@ if len(chunks) < 2:
 if not done and not finish:
     print("  FAIL: missing stream termination", file=sys.stderr)
     sys.exit(1)
-if want >= 64 and len(text) < 32 and int(compl or 0) < 16:
-    print("  FAIL: streamed content much smaller than requested (simulator may need --mode echo)", file=sys.stderr)
+if expect_echo:
+    ph = hashlib.sha256(prompt.encode()).hexdigest()
+    th = hashlib.sha256(text.encode()).hexdigest()
+    print(f"  echo_sha prompt={ph[:16]}… content={th[:16]}… match={ph == th}")
+    if text != prompt:
+        print(f"  FAIL: echo mismatch prompt_bytes={len(prompt)} content_bytes={len(text)}", file=sys.stderr)
+        sys.exit(1)
+elif len(text) < 8 and int(compl or 0) < 1:
+    print("  FAIL: empty streamed content", file=sys.stderr)
     sys.exit(1)
-print("  OK stream large I/O")
+print("  OK stream large I/O" + (" (echo integrity OK)" if expect_echo else ""))
 PY
   fi
 

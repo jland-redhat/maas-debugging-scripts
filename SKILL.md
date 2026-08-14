@@ -89,10 +89,32 @@ one-offs that will never generalize.
 New script checklist: env-overridable, sources `lib/common.sh` when useful,
 `--help` or header usage, add a row to the symptom table + `README.md`.
 
+## Full check (setup + suite + report)
+
+When the user asks for a **full check**, **infra setup**, or end-to-end
+validation of streaming / large I/O / basic security:
+
+```bash
+"$SKILL_ROOT/scripts/full-check.sh"              # apply echo fixtures + run suite
+"$SKILL_ROOT/scripts/full-check.sh --skip-setup" # suite only
+"$SKILL_ROOT/scripts/full-check.sh --setup-only"
+"$SKILL_ROOT/scripts/full-check.sh --teardown"
+```
+
+This **only** creates MaaS objects (echo LLMIS + ModelRef + AuthPolicy +
+Subscription under `fixtures/fullcheck-echo/`). It preflights that MaaS looks
+installed; it does **not** install the platform.
+
+Suite includes: non-stream echo smoke, streaming `--expect-echo`, large I/O
+both modes `--expect-echo`, body-routing probe, identity-spoof mint probe,
+envoy filter dump. Writes `~/.tmp/maas-fullcheck-*.md`.
+
 ## Symptom → script
 
 | Symptom | Run |
 |---------|-----|
+| Full suite / echo infra | `"$SKILL_ROOT/scripts/full-check.sh"` |
+| Apply echo model + sub/auth only | `"$SKILL_ROOT/scripts/setup-fullcheck-infra.sh" --wait` |
 | Gateway OOM / EnvoyFilter churn | `"$SKILL_ROOT/scripts/print-resource-generations.sh"` |
 | Live Envoy HTTP filter chain | `"$SKILL_ROOT/scripts/print-envoy-filters.sh" --stats` |
 | Intended EF / WasmPlugin inventory | `"$SKILL_ROOT/scripts/inventory-envoyfilters.sh"` |
@@ -101,8 +123,9 @@ New script checklist: env-overridable, sources `lib/common.sh` when useful,
 | Auth / key mint fail | `"$SKILL_ROOT/scripts/check-auth-stack.sh" --logs` |
 | Smoke: mint + one chat | `"$SKILL_ROOT/scripts/mint-and-chat.sh" [MODEL]` |
 | Burst + running token tally | `"$SKILL_ROOT/scripts/burst-inference.sh" --count N` |
-| Streaming SSE broken / incomplete | `"$SKILL_ROOT/scripts/probe-streaming.sh" [MODEL]` |
-| Large req/resp (stream + nonstream) | `"$SKILL_ROOT/scripts/probe-large-io.sh" [MODEL]` |
+| Streaming SSE (+ optional echo integrity) | `"$SKILL_ROOT/scripts/probe-streaming.sh" [--expect-echo]` |
+| Large req/resp (stream + nonstream) | `"$SKILL_ROOT/scripts/probe-large-io.sh" [--expect-echo]` |
+| Identity spoof on mint | `"$SKILL_ROOT/scripts/probe-identity-spoof.sh"` |
 | List API key rows in DB | `"$SKILL_ROOT/scripts/db-list-api-keys.sh"` |
 | Interactive `psql` | `"$SKILL_ROOT/scripts/db-shell.sh"` |
 | DB secrets / sslmode | `"$SKILL_ROOT/scripts/db-show-config.sh"` |
@@ -126,12 +149,13 @@ New script checklist: env-overridable, sources `lib/common.sh` when useful,
 
 **Rate limit / token burn** → `burst-inference.sh --count 20` (`--stop-on-429` optional)
 
-**Streaming / SSE** → `probe-streaming.sh`
+**Streaming / SSE** → `probe-streaming.sh` (add `--expect-echo` with echo LLMIS)
 
-**Large body / wasm chunk loss** → `probe-large-io.sh --request-kb 64 --response-tokens 512`
-(If model is llm-d-inference-sim / sample simulator: **ask the user** before
-patching the LLMIS to `--mode echo` for guaranteed large mirrored responses.
-Default path already sends `ignore_eos=true`.)
+**Large body / integrity** → prefer `full-check.sh` or
+`probe-large-io.sh --expect-echo` against echo-mode model. If using a random
+simulator instead: **ask the user** before patching LLMIS to `--mode echo`.
+
+**End-to-end / “run all the checks”** → `full-check.sh`
 
 **Gateway OOM** → `print-resource-generations.sh` (`--watch 5` if live)
 

@@ -125,8 +125,11 @@ Or from a clone checkout:
 | `check-auth-stack.sh` | AuthPolicy / Authorino / NP |
 | `mint-and-chat.sh` | Mint key → models → one chat/completions |
 | `burst-inference.sh` | Many calls + running token tally |
-| `probe-streaming.sh` | Validate SSE `stream=true` chat/completions |
-| `probe-large-io.sh` | Large prompt + large completion; nonstream and stream |
+| `probe-streaming.sh` | Validate SSE (`--expect-echo` for byte integrity) |
+| `probe-large-io.sh` | Large prompt/completion; `--expect-echo` for integrity |
+| `probe-identity-spoof.sh` | Forged `X-MaaS-*` on mint (hardened vs vulnerable) |
+| `setup-fullcheck-infra.sh` | Apply echo LLMIS + ModelRef + AuthPolicy + Subscription |
+| `full-check.sh` | Setup (optional) + suite + markdown report |
 | `db-list-api-keys.sh` | `api_keys` rows in Postgres (`key_hash` only) |
 | `db-shell.sh` | Interactive `psql` |
 | `db-show-config.sh` | DB secrets / redacted DSN / sslmode |
@@ -142,7 +145,20 @@ Or from a clone checkout:
 | Rate-limit / token burn | `burst-inference.sh` |
 | Streaming SSE | `probe-streaming.sh` |
 | Large request/response (both modes) | `probe-large-io.sh` |
+| Full suite + echo infra | `full-check.sh` |
 | Smoke | `mint-and-chat.sh` |
+
+### Full check
+
+```bash
+./scripts/full-check.sh                 # create echo fixtures + run suite + report
+./scripts/full-check.sh --skip-setup    # suite only
+./scripts/full-check.sh --teardown
+```
+
+Creates only MaaS objects in `fixtures/fullcheck-echo/` (echo-mode
+`llm-d-inference-sim`, ModelRef, AuthPolicy, Subscription). Does not install
+MaaS itself. Report: `~/.tmp/maas-fullcheck-*.md`.
 
 ---
 

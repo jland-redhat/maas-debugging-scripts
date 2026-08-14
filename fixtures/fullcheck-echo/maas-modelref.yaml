@@ -1,0 +1,14 @@
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSModelRef
+metadata:
+  name: maas-debug-echo
+  namespace: llm
+  labels:
+    maas.opendatahub.io/fullcheck: "echo"
+  annotations:
+    openshift.io/display-name: "MaaS debug echo"
+    openshift.io/description: "Echo simulator for full-check integrity probes"
+spec:
+  modelRef:
+    kind: LLMInferenceService
+    name: maas-debug-echo

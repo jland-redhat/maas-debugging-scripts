@@ -229,8 +229,7 @@ cleanup_minted_api_key() {
   fi
 }
 
-# Resolve MODEL_NAME + MODEL_URL from /maas-api/v1/models using API_KEY.
-# Optional arg: requested model id.
+# Resolve MODEL_NAME + MODEL_URL; if exact id missing, match substring in .id
 resolve_model() {
   local host requested models model_path
   host="$(maas_host)"
@@ -243,6 +242,10 @@ resolve_model() {
   if [[ -n "$requested" ]]; then
     MODEL_NAME="$(echo "$models" | jq -r --arg m "$requested" '.data[]? | select(.id==$m) | .id' | head -1)"
     MODEL_URL="$(echo "$models" | jq -r --arg m "$requested" '.data[]? | select(.id==$m) | .url' | head -1)"
+    if [[ -z "$MODEL_NAME" || "$MODEL_NAME" == "null" ]]; then
+      MODEL_NAME="$(echo "$models" | jq -r --arg m "$requested" '.data[]? | select(.id|contains($m)) | .id' | head -1)"
+      MODEL_URL="$(echo "$models" | jq -r --arg m "$requested" '.data[]? | select(.id|contains($m)) | .url' | head -1)"
+    fi
   else
     MODEL_NAME="$(echo "$models" | jq -r '.data[0].id // empty')"
     MODEL_URL="$(echo "$models" | jq -r '.data[0].url // empty')"
@@ -254,6 +257,30 @@ resolve_model() {
     MODEL_URL="${host}${model_path}"
     info "rewrote internal model URL → ${MODEL_URL}"
   fi
+}
+
+# Mint with optional subscription body field.
+# Usage: mint_api_key_with_subscription <subscription-name>
+mint_api_key_with_subscription() {
+  local host name sub resp body code
+  sub="${1:?subscription required}"
+  host="$(maas_host)"
+  _MAAS_HOST="$host"
+  _OC_TOKEN_FOR_KEY="$(oc_token)"
+  name="${API_KEY_NAME:-debug-$(date +%s)}"
+  resp="$(curl -sSk --connect-timeout 10 --max-time 30 -w '\n%{http_code}' \
+    -H "Authorization: Bearer ${_OC_TOKEN_FOR_KEY}" \
+    -H 'Content-Type: application/json' \
+    -X POST \
+    -d "{\"expiresIn\":\"1h\",\"name\":\"${name}\",\"subscription\":\"${sub}\"}" \
+    "${host}/maas-api/v1/api-keys")"
+  body="$(echo "$resp" | sed '$d')"
+  code="$(echo "$resp" | tail -n1)"
+  [[ "$code" == "201" || "$code" == "200" ]] \
+    || die "API key mint failed (HTTP ${code}): $(echo "$body" | head -c 300)"
+  API_KEY="$(echo "$body" | jq -r '.key // empty')"
+  API_KEY_ID="$(echo "$body" | jq -r '.id // empty')"
+  [[ -n "$API_KEY" ]] || die "no .key in mint response"
 }
 
 # Heuristic: is this an llm-d-inference-sim / sample simulator model?

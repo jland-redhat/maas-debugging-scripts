@@ -1,0 +1,18 @@
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSAuthPolicy
+metadata:
+  name: maas-debug-echo-access
+  namespace: models-as-a-service
+  labels:
+    maas.opendatahub.io/fullcheck: "echo"
+  annotations:
+    openshift.io/display-name: "MaaS debug echo access"
+    openshift.io/description: "Authenticated users may use the full-check echo model"
+spec:
+  modelRefs:
+    - name: maas-debug-echo
+      namespace: llm
+  subjects:
+    groups:
+      - name: system:authenticated
+    users: []

@@ -1,0 +1,23 @@
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: maas-debug-echo-sub
+  namespace: models-as-a-service
+  labels:
+    maas.opendatahub.io/fullcheck: "echo"
+  annotations:
+    openshift.io/display-name: "MaaS debug echo subscription"
+    openshift.io/description: "High limits for full-check / large-payload probes"
+spec:
+  owner:
+    groups:
+      - name: system:authenticated
+    users: []
+  modelRefs:
+    - name: maas-debug-echo
+      namespace: llm
+      tokenRateLimits:
+        # Generous so large echo bodies do not trip Limitador mid-probe
+        - limit: 1000000
+          window: 1m
+  priority: 100

@@ -1,0 +1,12 @@
+# Full-check echo simulator fixtures (MaaS CRs + LLMIS only).
+# Applied by scripts/setup-fullcheck-infra.sh — does not install MaaS itself.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace-llm.yaml
+  - namespace-maas.yaml
+  - llmis.yaml
+  - maas-modelref.yaml
+  - maas-authpolicy.yaml
+  - maas-subscription.yaml
