@@ -20,54 +20,65 @@ Requires: `oc` or `kubectl`, `curl`, `jq`, `python3`.
 
 ## Install the skill
 
-### Option A — Global symlink (recommended for local clone)
+You do **not** need to manually `git clone` this repo. Prefer A or B.
 
-Cursor loads user skills from `~/.cursor/skills/<name>/`. The folder name must
-be `maas-debugging` (matches the skill `name`).
+### Option A — `npx skills` (no manual clone)
+
+Installs the skill (including `scripts/` + `lib/`) into your agent skills dir:
 
 ```bash
-git clone <THIS_REPO_URL> ~/src/maas-debugging-scripts   # or your preferred path
+# Global (available in every workspace)
+npx skills add jland-redhat/maas-debugging-scripts -g
+
+# Or project-local (current workspace only)
+npx skills add jland-redhat/maas-debugging-scripts
+```
+
+Update later with `npx skills check` / `npx skills update` (see [skills.sh](https://skills.sh)).
+
+### Option B — Cursor UI: Remote Rule (GitHub)
+
+Cursor fetches/syncs the repo for you (you don’t clone by hand):
+
+1. **Customize** (sidebar) → **Rules** → **Add Rule**
+2. **Remote Rule (Github)**
+3. Paste: `https://github.com/jland-redhat/maas-debugging-scripts`
+
+Per [Cursor docs](https://cursor.com/docs/skills), this is the built-in GitHub
+import path. **Caveat:** some builds treat this importer as Rules (`.mdc`) and
+skills may not show under **Skills** / Agent context even though files synced —
+if that happens, use Option A or C.
+
+### Option C — Manual clone / symlink (contributors)
+
+Use this when you want a writable checkout to fix/add scripts:
+
+```bash
+git clone git@github.com:jland-redhat/maas-debugging-scripts.git ~/src/maas-debugging-scripts
 ln -sfn ~/src/maas-debugging-scripts ~/.cursor/skills/maas-debugging
 ```
 
-Verify: **Customize → Skills** (or type `/maas-debugging` in Agent chat).
-
-To update later: `git -C ~/src/maas-debugging-scripts pull`.
-
-### Option B — Clone directly into the skills directory
+Or clone straight into the skills dir:
 
 ```bash
-git clone <THIS_REPO_URL> ~/.cursor/skills/maas-debugging
+git clone git@github.com:jland-redhat/maas-debugging-scripts.git ~/.cursor/skills/maas-debugging
 ```
 
-### Option C — Cursor “Remote Rule (GitHub)”
+Folder name must be `maas-debugging` (matches skill `name` in `SKILL.md`).
 
-1. Open **Customize** in the sidebar  
-2. **Rules** → **Add Rule**  
-3. Select **Remote Rule (Github)**  
-4. Paste this repository’s GitHub URL  
-
-Cursor syncs the skill (including `scripts/` and `lib/`) from the repo.
-
-### Option D — Project-only (this repo as the workspace)
-
-If you open this repo as your Cursor workspace and still want project-scoped
-discovery without a global install:
-
-```bash
-mkdir -p .cursor/skills
-ln -sfn ../.. .cursor/skills/maas-debugging
-```
-
-(Prefer Option A/B for use while working in *other* MaaS repos like
-`maas-billing`.)
+Verify: **Customize → Skills**, or type `/maas-debugging` in Agent chat.
 
 ### Uninstall
 
 ```bash
-rm ~/.cursor/skills/maas-debugging    # symlink or clone
-# If Option B was a full clone, that deletes the clone — back up first if needed.
+# After npx / clone into skills dir:
+rm -rf ~/.cursor/skills/maas-debugging
+
+# Symlink only (Option C):
+rm ~/.cursor/skills/maas-debugging
 ```
+
+Remove any matching **Remote Rule** entry under **Customize → Rules** if you used Option B.
 
 ---
 
