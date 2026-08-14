@@ -1,52 +1,68 @@
 ---
 name: maas-debugging
 description: >-
-  Debug Models-as-a-Service (MaaS) on OpenShift / RHOAI / ODH using the
-  maas-debugging-scripts toolbox: Envoy filter chains, EnvoyFilter generations
-  churn, AuthPolicy/Authorino, API key mint + inference, burst token tallies,
-  Postgres api_keys queries, body-routing 404 NR probes. Use when the user is
-  debugging MaaS, IPP/Praxis, Kuadrant, Limitador, gateway OOM, API keys,
-  rate limits, or asks to run MaaS debug scripts.
+  Debug Models-as-a-Service (MaaS) on OpenShift / RHOAI / ODH using bundled
+  shell scripts (Envoy chains, generations churn, AuthPolicy, API keys,
+  inference bursts with token tally, Postgres). Use when debugging MaaS,
+  IPP/Praxis, Kuadrant, Limitador, gateway OOM, API keys, rate limits, or
+  when the user asks for MaaS debug scripts. Prefer these scripts over
+  writing new curls to save tokens.
 ---
 
 # MaaS Debugging
 
-Prefer **running scripts from the toolbox** over inventing one-off curls.
+**Goal:** minimize token burn. Run the bundled scripts. Do **not** invent
+large curl/`oc` blocks when a script already covers the job.
 
-## Repo
+## Skill layout (scripts ship with the skill)
 
 ```text
-MAAS_DEBUG_ROOT=/home/jland/Documents/RedHat/maas/maas-debugging-scripts
+<skill-root>/                 ← directory containing this SKILL.md
+  SKILL.md
+  lib/common.sh
+  scripts/*.sh
 ```
 
-All commands below: `cd "$MAAS_DEBUG_ROOT"` first (or prefix paths).
+Resolve `<skill-root>` as the folder that holds this `SKILL.md` (wherever
+Cursor installed the skill: project `.cursor/skills/…`, `~/.cursor/skills/…`,
+or a GitHub-synced copy).
 
-Requires: `oc` or `kubectl`, `curl`, `jq`, `python3`. Respect `KUBECONFIG` if set.
+```bash
+SKILL_ROOT="<skill-root>"   # absolute path to this skill directory
+cd "$SKILL_ROOT"            # optional; or call scripts by absolute path
+```
 
-## Agent rules
+## Hard rules for the agent
 
-1. Map the symptom → script (table below). Run the script; read its output.
-2. Do **not** paste large invent-your-own curl blocks when a script already covers it.
-3. Pass through env overrides (`MAAS_GATEWAY_HOST`, `DB_NS`, `GW_NAME`, `API_KEY`, …).
-4. “Generations” often means Kubernetes `metadata.generation` (RHOAIENG-81865), not LLM tokens — use `print-resource-generations.sh`.
-5. Postgres stores `key_hash` only — never expect plaintext API keys in the DB.
-6. After fixing something, re-run the same script to confirm.
+1. **Map symptom → script** (table below). Execute that script with the Shell tool.
+2. **Never rewrite** mint/list-models/chat/envoy-dump/psql recipes as ad-hoc
+   curls when a script exists — that wastes tokens and drifts from known-good.
+3. Pass env overrides through (`KUBECONFIG`, `MAAS_GATEWAY_HOST`, `DB_NS`,
+   `API_KEY`, `GW_NAME`, …). Read `scripts/<name>.sh --help` / header comments
+   only if flags are unclear.
+4. “Generations” often means Kubernetes `metadata.generation` (RHOAIENG-81865),
+   **not** LLM tokens → `print-resource-generations.sh`.
+5. Postgres has `key_hash` only — no plaintext API keys in the DB.
+6. After a fix, **re-run the same script** to confirm.
+
+Only hand-roll commands when **no** script fits; then keep them tiny and
+consider adding a script to this skill afterward.
 
 ## Symptom → script
 
-| Symptom | Script |
-|---------|--------|
-| Gateway OOM / EnvoyFilter churn | `scripts/print-resource-generations.sh` |
-| Live Envoy HTTP filter chain | `scripts/print-envoy-filters.sh [--stats]` |
-| Intended EF / WasmPlugin inventory | `scripts/inventory-envoyfilters.sh` |
-| EF not applying / istiod skip | `scripts/check-istiod-skips.sh` |
-| `404 NR` body routing | `scripts/probe-body-routing.sh <MODEL_ID>` |
-| Auth / key mint fail | `scripts/check-auth-stack.sh [--logs]` |
-| Smoke: mint + one chat | `scripts/mint-and-chat.sh [MODEL]` |
-| Burst calls + running token tally | `scripts/burst-inference.sh [--count N]` |
-| List API key metadata in DB | `scripts/db-list-api-keys.sh` |
-| Interactive `psql` | `scripts/db-shell.sh` |
-| DB secrets / sslmode | `scripts/db-show-config.sh` |
+| Symptom | Run |
+|---------|-----|
+| Gateway OOM / EnvoyFilter churn | `"$SKILL_ROOT/scripts/print-resource-generations.sh"` |
+| Live Envoy HTTP filter chain | `"$SKILL_ROOT/scripts/print-envoy-filters.sh" --stats` |
+| Intended EF / WasmPlugin inventory | `"$SKILL_ROOT/scripts/inventory-envoyfilters.sh"` |
+| EF not applying / istiod skip | `"$SKILL_ROOT/scripts/check-istiod-skips.sh"` |
+| `404 NR` body routing | `"$SKILL_ROOT/scripts/probe-body-routing.sh" <MODEL_ID>` |
+| Auth / key mint fail | `"$SKILL_ROOT/scripts/check-auth-stack.sh" --logs` |
+| Smoke: mint + one chat | `"$SKILL_ROOT/scripts/mint-and-chat.sh" [MODEL]` |
+| Burst + running token tally | `"$SKILL_ROOT/scripts/burst-inference.sh" --count N` |
+| List API key rows in DB | `"$SKILL_ROOT/scripts/db-list-api-keys.sh"` |
+| Interactive `psql` | `"$SKILL_ROOT/scripts/db-shell.sh"` |
+| DB secrets / sslmode | `"$SKILL_ROOT/scripts/db-show-config.sh"` |
 
 ## Common env
 
@@ -56,33 +72,20 @@ Requires: `oc` or `kubectl`, `curl`, `jq`, `python3`. Respect `KUBECONFIG` if se
 | `MAAS_GATEWAY_HOST` | e.g. `https://maas.apps....` |
 | `GW_NS` / `GW_NAME` | Default `openshift-ingress` / `maas-default-gateway` |
 | `MAAS_API_NS` / `DB_NS` | Infra / Postgres namespace |
-| `API_KEY` | Skip mint for inference scripts |
+| `API_KEY` | Skip mint on inference scripts |
 | `OC_TOKEN` | Override `oc whoami -t` |
 
-## Typical triage order
+## Typical triage
 
-**404 NR / missing IPP**
-1. `./scripts/print-envoy-filters.sh --stats`
-2. `./scripts/probe-body-routing.sh <model>`
-3. `./scripts/inventory-envoyfilters.sh` → `./scripts/check-istiod-skips.sh`
+**404 NR / missing IPP** → `print-envoy-filters.sh --stats` → `probe-body-routing.sh` → `inventory-envoyfilters.sh` / `check-istiod-skips.sh`
 
-**Key mint / AUTH_FAILURE**
-1. `./scripts/check-auth-stack.sh --logs`
-2. `./scripts/mint-and-chat.sh`
-3. `./scripts/db-list-api-keys.sh --counts` (did anything land?)
+**Key mint / AUTH_FAILURE** → `check-auth-stack.sh --logs` → `mint-and-chat.sh` → `db-list-api-keys.sh --counts`
 
-**Rate limit / token burn**
-1. `./scripts/burst-inference.sh --count 20`
-2. Optional: `--stop-on-429`, `--verbose`
+**Rate limit / token burn** → `burst-inference.sh --count 20` (`--stop-on-429` optional)
 
-**Gateway OOM**
-1. `./scripts/print-resource-generations.sh`
-2. `--watch 5` if churning live
+**Gateway OOM** → `print-resource-generations.sh` (`--watch 5` if live)
 
 ## Adding scripts
 
-New recipes go in `$MAAS_DEBUG_ROOT/scripts/`, helpers in `lib/common.sh`, and a README row. Keep scripts env-overridable and Podman-first only if containers appear (cluster debug uses `oc`).
-
-## More detail
-
-Full script docs: [README.md](../../../README.md) (repo root relative from this skill) or `$MAAS_DEBUG_ROOT/README.md`.
+Put new recipes in `<skill-root>/scripts/`, shared helpers in `lib/common.sh`.
+Keep them env-overridable. Update the symptom table in this file.
